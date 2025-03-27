@@ -6,25 +6,32 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # --- Dependencies ---
 find_package(OpenGL REQUIRED)
-find_package(GLEW REQUIRED) # Added GLEW
+find_package(GLEW REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(glm REQUIRED)
 
 # --- Include Directories ---
-include_directories(src vendor) # Added vendor for stb_image
+include_directories(src vendor)
 
 # --- Source Files ---
 set(SOURCES
     src/main.cpp
-    src/Aircraft.cpp
-    src/Map.cpp
-    src/MiniMap.cpp
     src/Graphics.cpp
-    src/Camera.cpp      # Added
-    src/Shader.cpp      # Added
-    src/Input.cpp       # Added
-    src/Texture.cpp     # Added
-)
+    src/Camera.cpp
+    src/Shader.cpp
+    src/Input.cpp
+    src/Texture.cpp         # ADD Texture.cpp
+    # src/Map.cpp           # REMOVE Map.cpp
+    src/Terrain.cpp         # ADD Terrain.cpp
+    src/MiniMap.cpp
+    # --- Physics Files ---
+    src/PhysicsConfig.cpp
+    src/RigidBody.cpp
+    src/Airfoil.cpp
+    src/Wing.cpp
+    # --- Aircraft (Modified) ---
+    src/Aircraft.cpp
+) # Note: OpenGLUtils.h and TerrainBlock.h are header-only
 
 # --- Executable ---
 add_executable(FlightSimulator ${SOURCES})
@@ -33,19 +40,17 @@ add_executable(FlightSimulator ${SOURCES})
 target_link_libraries(FlightSimulator
     PRIVATE
     OpenGL::GL
-    GLEW::GLEW      # Link GLEW
+    GLEW::GLEW
     glfw
-    glm::glm        # Use modern glm target
+    glm::glm
 )
 
-# --- Optional: Copy Assets ---
-# Add custom command to copy assets directory to build directory if needed
-# file(COPY assets DESTINATION ${CMAKE_BINARY_DIR})
+# --- STB Image Implementation (Defined manually in Texture.cpp now) ---
+# REMOVED: target_compile_definitions(FlightSimulator PRIVATE STB_IMAGE_IMPLEMENTATION)
 
-# --- STB Image Implementation ---
-# Tell CMake that stb_image is header-only but needs one source file
-# to compile the implementation. We do this in main.cpp.
-# target_compile_definitions(FlightSimulator PRIVATE STB_IMAGE_IMPLEMENTATION)
+# --- Optional: Copy Assets ---
+file(COPY assets DESTINATION ${CMAKE_BINARY_DIR})
+message(STATUS "Copying 'assets' directory to ${CMAKE_BINARY_DIR}")
 
 # --- Platform Specific ---
 if(APPLE)

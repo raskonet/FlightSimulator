@@ -12,7 +12,10 @@ public:
     Shader(const char* vertexPath, const char* fragmentPath);
     ~Shader();
 
-    void use() const;
+    // --- Modified use() method ---
+    // Allows calling use() to activate, use(true) to activate, use(false) to deactivate
+    void use(bool activate = true) const;
+
     // Utility uniform functions
     void setBool(const std::string &name, bool value) const;
     void setInt(const std::string &name, int value) const;

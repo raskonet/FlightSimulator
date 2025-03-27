@@ -1,87 +1,112 @@
 #include "Texture.h"
 #include <iostream>
+#include <utility> // For std::swap
 
 // Define STB_IMAGE_IMPLEMENTATION in this file only, before including stb_image.h
-#define STB_IMAGE_IMPLEMENTATION // <--- ADD THIS LINE
-#include <stb_image.h>           // <--- Include AFTER the define
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
-// Ensure GL types are known (comes via Texture.h -> glew.h or include glew.h directly)
-#include <GL/glew.h>
-
-
-Texture::Texture(const char* path) : ID(0), Width(0), Height(0), NrChannels(0) {
+// Constructor implementation
+Texture::Texture(const char* path, const GLUtil::TextureParams& params)
+    : ID(0), Width(0), Height(0), NrChannels(0) // Initialize members
+{
     glGenTextures(1, &ID);
+    if (ID == 0) { // Check if glGenTextures failed (rare)
+         std::cerr << "Error: Failed to generate texture handle." << std::endl;
+         return;
+    }
     // Bind the texture handle immediately so settings apply to it
     glBindTexture(GL_TEXTURE_2D, ID);
-    if (!loadTexture(path)) {
-        // If loading failed, cleanup the potentially generated texture handle
-        glDeleteTextures(1, &ID);
-        ID = 0; // Indicate failure
+    if (!loadTexture(path, params)) { // Pass params to loadTexture
+        glDeleteTextures(1, &ID); // Clean up if loading fails
+        ID = 0; // Mark as invalid
         std::cerr << "Error: Failed to load texture: " << path << std::endl;
-        // Optionally unbind texture handle (though it's 0 now if deleted)
-        // glBindTexture(GL_TEXTURE_2D, 0);
     }
-     // Keep texture bound after successful load? Depends on usage, often unbound here.
-     // glBindTexture(GL_TEXTURE_2D, 0); // Unbind after setup
+    glBindTexture(GL_TEXTURE_2D, 0); // Unbind after setup/loading attempt
 }
+
 
 Texture::~Texture() {
     if (ID != 0) {
         glDeleteTextures(1, &ID);
-        ID = 0; // Good practice
     }
 }
 
-bool Texture::loadTexture(const char* path) {
-    // Texture should already be bound from the constructor or bind call
+// Move constructor
+Texture::Texture(Texture&& other) noexcept
+    : ID(other.ID), Width(other.Width), Height(other.Height), NrChannels(other.NrChannels) {
+    other.ID = 0; // Leave moved-from object in a valid (but empty) state
+    other.Width = 0;
+    other.Height = 0;
+    other.NrChannels = 0;
+}
 
-    // Set texture wrapping/filtering options (on the currently bound texture ID)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR); // Use mipmaps
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+// Move assignment operator
+Texture& Texture::operator=(Texture&& other) noexcept {
+    if (this != &other) {
+        // Delete existing resource if any
+        if (ID != 0) {
+            glDeleteTextures(1, &ID);
+        }
+        // Transfer ownership
+        ID = other.ID;
+        Width = other.Width;
+        Height = other.Height;
+        NrChannels = other.NrChannels;
+        // Reset moved-from object
+        other.ID = 0;
+        other.Width = 0;
+        other.Height = 0;
+        other.NrChannels = 0;
+    }
+    return *this;
+}
 
-    // Load image using stb_image
-    stbi_set_flip_vertically_on_load(true); // Match OpenGL coordinate system (0,0 at bottom-left)
+
+// loadTexture implementation taking params
+bool Texture::loadTexture(const char* path, const GLUtil::TextureParams& params) {
+    // Texture ID should already be bound here
+
+    // Set texture wrapping/filtering options from params
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, params.texture_wrap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, params.texture_wrap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, params.texture_min_filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, params.texture_mag_filter);
+
+    stbi_set_flip_vertically_on_load(true);
     unsigned char *data = stbi_load(path, &Width, &Height, &NrChannels, 0);
     if (data) {
-        GLenum internalFormat = GL_RGB; // Default format
+        GLenum internalFormat = GL_RGB;
         GLenum dataFormat = GL_RGB;
-        if (NrChannels == 1) {
-            internalFormat = GL_RED;
-            dataFormat = GL_RED;
-        } else if (NrChannels == 3) {
-            internalFormat = GL_RGB; // Often use GL_SRGB for color textures if doing gamma correction
-            dataFormat = GL_RGB;
-        } else if (NrChannels == 4) {
-            internalFormat = GL_RGBA; // Often use GL_SRGB_ALPHA for color+alpha textures
-            dataFormat = GL_RGBA;
-        } else {
-            std::cerr << "Warning: Unsupported number of channels (" << NrChannels << ") in texture: " << path << std::endl;
-            stbi_image_free(data); // Free loaded data even if format is wrong
-            return false; // Indicate failure
+         if (NrChannels == 1) { internalFormat = GL_RED; dataFormat = GL_RED; }
+         else if (NrChannels == 3) { internalFormat = GL_RGB; dataFormat = GL_RGB; } // Consider GL_SRGB
+         else if (NrChannels == 4) { internalFormat = GL_RGBA; dataFormat = GL_RGBA; } // Consider GL_SRGB_ALPHA
+         else {
+            std::cerr << "Warning: Unsupported texture channels (" << NrChannels << ") in: " << path << std::endl;
+            stbi_image_free(data);
+            return false;
         }
 
-        // Upload texture data to the GPU
         glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, Width, Height, 0, dataFormat, GL_UNSIGNED_BYTE, data);
-        // Generate mipmaps AFTER uploading the base level
-        glGenerateMipmap(GL_TEXTURE_2D);
+        // Generate mipmaps if min filter uses them
+        if (params.texture_min_filter == GL_NEAREST_MIPMAP_NEAREST ||
+            params.texture_min_filter == GL_LINEAR_MIPMAP_NEAREST ||
+            params.texture_min_filter == GL_NEAREST_MIPMAP_LINEAR ||
+            params.texture_min_filter == GL_LINEAR_MIPMAP_LINEAR) {
+            glGenerateMipmap(GL_TEXTURE_2D);
+        }
 
-        // Free the CPU-side image data, it's now on the GPU
         stbi_image_free(data);
-        return true; // Success
+        return true;
     } else {
         std::cerr << "Error: Failed to load texture data from: " << path << std::endl;
         std::cerr << "STB Reason: " << stbi_failure_reason() << std::endl;
-        return false; // Failure
+        return false;
     }
 }
 
 void Texture::bind(GLuint textureUnit) const {
-    if (ID == 0) {
-        // std::cerr << "Warning: Attempting to bind invalid texture (ID=0)" << std::endl;
-        return; // Don't try to bind an invalid texture
-    }
-    glActiveTexture(textureUnit); // Activate the desired texture unit
-    glBindTexture(GL_TEXTURE_2D, ID); // Bind this texture's ID to the active unit
+    if (!isValid()) return; // Don't bind invalid texture
+    glActiveTexture(textureUnit);
+    glBindTexture(GL_TEXTURE_2D, ID);
 }
