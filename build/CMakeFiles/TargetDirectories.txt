@@ -1,0 +1,3 @@
+/home/rasko/projects/FlightSimulator/build/CMakeFiles/FlightSimulator.dir
+/home/rasko/projects/FlightSimulator/build/CMakeFiles/edit_cache.dir
+/home/rasko/projects/FlightSimulator/build/CMakeFiles/rebuild_cache.dir
